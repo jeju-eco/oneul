@@ -1,0 +1,17 @@
+{
+  "name": "oneul",
+  "version": "1.0.0",
+  "description": "오늘 나가? — 제주 날씨·물때·오름·먹은곳 PWA",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node tests/core.test.js && node tests/ui.test.js",
+    "mutate": "node tools/mutate.js",
+    "icons": "python tools/make_icons.py",
+    "serve": "python -m http.server 8778"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^30.1.1"
+  }
+}

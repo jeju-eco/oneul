@@ -1,0 +1,26 @@
+{
+  "name": "오늘 나가?",
+  "short_name": "오늘나가",
+  "description": "제주 날씨·물때 보고 나가서, 다녀온 곳을 지도에 남긴다",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1720",
+  "theme_color": "#0f1720",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
