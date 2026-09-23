@@ -423,6 +423,19 @@ t('id가 겹치지 않는다', () => {
   for (let i = 0; i < 500; i++) ids.add(C.newId());
   assert.strictEqual(ids.size, 500);
 });
+t('같은 밀리초에 연달아 만들어도 안 겹친다', () => {
+  // 빠르게 여러 건 기록하면 Date.now()가 같다. 그때 덮어써지면 안 된다.
+  const real = Date.now;
+  Date.now = () => 1_700_000_000_000;
+  try {
+    const n = 50000;
+    const ids = new Set();
+    for (let i = 0; i < n; i++) ids.add(C.newId());
+    assert.strictEqual(ids.size, n, `같은 밀리초에서 id가 ${n - ids.size}개 겹침`);
+  } finally {
+    Date.now = real;
+  }
+});
 t('집계가 맞는다', () => {
   const s = C.summarize(db.visits);
   assert.strictEqual(s.total, 3);

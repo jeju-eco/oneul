@@ -45,6 +45,7 @@ const MUTATIONS = [
   ['core.js', '라벨을 올림으로', 'label: SCORE_LABEL[Math.floor(overall)] || SCORE_LABEL[0],', 'label: SCORE_LABEL[Math.ceil(overall)] || SCORE_LABEL[0],'],
   ['app.js', '지도를 전체에 안 맞춤', 'map.fitBounds(L.latLngBounds(pts).pad(0.08));', 'void pts;'],
   ['app.js', '파고 칩을 항상 표시', 'if (w && w.wave != null && w.wave >= 1)', 'if (w && w.wave != null)'],
+  ['core.js', 'id를 난수로 (같은 ms 충돌)', "return Date.now().toString(36) + '-' + (idSeq++).toString(36);", "return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);"],
 ];
 
 const TESTS = ['tests/core.test.js', 'tests/ui.test.js'];

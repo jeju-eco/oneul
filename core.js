@@ -405,8 +405,10 @@
       String(x.getDate()).padStart(2, '0');
   }
 
+  let idSeq = 0;
+  /** 같은 밀리초에 여러 번 불려도 겹치지 않는다 (연속 카운터를 붙인다). */
   function newId() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    return Date.now().toString(36) + '-' + (idSeq++).toString(36);
   }
 
   /**
