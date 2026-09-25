@@ -163,6 +163,7 @@
       if (p && p.data && Date.now() - p.at < 12 * 3600 * 1000) {
         // JSON을 거치며 Date가 문자열이 됐다. 되살려서 넘긴다.
         p.data.tides = (p.data.tides || []).map(C.reviveTide).filter(Boolean);
+        p.data.sea = p.data.sea || [];
         return p.data;
       }
     } catch (e) {}
@@ -195,18 +196,24 @@
       cloud: W.hourly.cloud_cover[i],
     }));
 
-    let tides = [], wave = null;
+    let tides = [], wave = null, sea = [];
     if (mr.status === 'fulfilled' && mr.value.hourly) {
       const H = mr.value.hourly;
       tides = C.tideExtremes(H.time, H.sea_level_height_msl || []);
       const wv = H.wave_height || [];
       const idx = nowIndex(H.time);
       wave = idx >= 0 ? wv[idx] : null;
+      // 곡선을 그리려면 극값이 아니라 시간별 원본이 필요하다
+      sea = (H.time || []).map((t, i) => ({
+        time: t,
+        h: (H.sea_level_height_msl || [])[i],
+        wave: wv[i] == null ? null : wv[i],
+      }));
     }
 
     const out = {
       lat: lat, lon: lon, at: Date.now(),
-      hours: hours, tides: tides, wave: wave,
+      hours: hours, tides: tides, wave: wave, sea: sea,
       sunrise: (W.daily.sunrise || [])[0], sunset: (W.daily.sunset || [])[0],
     };
     cacheWx(out);
@@ -443,6 +450,165 @@
     $('logList').innerHTML = '';
   }
 
+  /* ═══════════ 그래프 ═══════════ */
+
+  const W = 340, PAD = 8;
+
+  /** 지금 시각을 세로선으로 긋는다. 어디가 '현재'인지 없으면 읽기 어렵다. */
+  function nowLine(p, h) {
+    const now = Date.now();
+    if (now < p.t0 || now > p.t1) return '';
+    const x = C2(p.xOf(new Date(now)));
+    return `<line class="nowline" x1="${x}" y1="0" x2="${x}" y2="${h}"/>`;
+  }
+  function C2(n) { return Math.round(n * 10) / 10; }
+
+  /** 물때 곡선 — 만조·간조를 점으로 찍고 시각을 쓴다. */
+  function chartTide() {
+    if (!wx || !wx.sea || wx.sea.length < 3) return '';
+    const h = 118;
+    const p = C.plot(wx.sea.map((s) => ({ time: s.time, v: s.h })), { w: W, h: h, pad: PAD });
+    if (!p) return '';
+
+    const line = C.smoothPath(p.pts);
+    const area = `${line}L${C2(p.pts[p.pts.length - 1].x)},${h}L${C2(p.pts[0].x)},${h}Z`;
+
+    // 만조·간조 표시
+    const marks = (wx.tides || []).filter((t) => {
+      const ms = t.at.getTime();
+      return ms >= p.t0 && ms <= p.t1;
+    }).map((t) => {
+      const x = C2(p.xOf(t.at)), y = C2(p.yOf(t.h));
+      const up = t.type === 'high';
+      const ty = up ? Math.max(10, y - 10) : Math.min(h - 2, y + 17);
+      // 양 끝 라벨은 가운데 맞추면 화면 밖으로 잘린다
+      const la = C.labelAnchor(x, W, 18);
+      const anchor = la.anchor, tx = la.x;
+      return `<circle class="tideDot ${t.type}" cx="${x}" cy="${y}" r="3.5"/>` +
+        `<text class="tideTxt" x="${tx}" y="${ty}" text-anchor="${anchor}">${up ? '만' : '간'} ${t.t}</text>`;
+    }).join('');
+
+    return card('물때', `${wx.tides.length ? '' : ''}`,
+      `<svg viewBox="0 0 ${W} ${h}" class="chart" role="img" aria-label="조위 곡선">
+        <path class="tideArea" d="${area}"/>
+        <path class="tideLine" d="${line}"/>
+        ${nowLine(p, h)}${marks}
+      </svg>
+      <div class="axis"><span>${dayLabel(p.t0)}</span><span>${dayLabel(p.t1)}</span></div>`);
+  }
+
+  function dayLabel(ms) {
+    const d = new Date(ms);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}시`;
+  }
+
+  /** 시간별 날씨 — 기온 선 + 강수확률 막대 */
+  function chartWeather() {
+    if (!wx || !wx.hours || wx.hours.length < 3) return '';
+    const h = 108;
+    const rows = wx.hours.slice(0, 48);
+    const pt = C.plot(rows.map((r) => ({ time: r.time, v: r.temp })), { w: W, h: h, pad: PAD });
+    if (!pt) return '';
+
+    const bars = rows.map((r) => {
+      if (r.rain == null) return '';
+      const x = C2(pt.xOf(r.time));
+      const bh = C2((r.rain / 100) * (h - PAD * 2));
+      return bh < 1 ? '' : `<rect class="rainBar" x="${C2(x - 2.5)}" y="${C2(h - bh)}" width="5" height="${bh}"/>`;
+    }).join('');
+
+    return card('기온과 비', `${Math.round(pt.min)}~${Math.round(pt.max)}°`,
+      `<svg viewBox="0 0 ${W} ${h}" class="chart" role="img" aria-label="기온과 강수확률">
+        ${bars}<path class="tempLine" d="${C.smoothPath(pt.pts)}"/>${nowLine(pt, h)}
+      </svg>
+      <div class="axis"><span>파란 막대 = 비 올 확률</span><span>${dayLabel(pt.t1)}</span></div>`);
+  }
+
+  /** 바람 — 세기별 색으로 */
+  function chartWind() {
+    if (!wx || !wx.hours || wx.hours.length < 3) return '';
+    const h = 86;
+    const rows = wx.hours.slice(0, 48);
+    const p = C.plot(rows.map((r) => ({ time: r.time, v: r.wind })), { w: W, h: h, pad: PAD });
+    if (!p) return '';
+    const bars = rows.map((r) => {
+      if (r.wind == null) return '';
+      const x = C2(p.xOf(r.time)), y = C2(p.yOf(r.wind));
+      const cls = r.wind >= 10 ? 'strong' : r.wind >= 7 ? 'mid' : 'calm';
+      return `<rect class="windBar ${cls}" x="${C2(x - 2.5)}" y="${y}" width="5" height="${C2(h - y)}"/>`;
+    }).join('');
+    return card('바람', `최대 ${Math.round(p.max)}m/s`,
+      `<svg viewBox="0 0 ${W} ${h}" class="chart" role="img" aria-label="시간별 바람">
+        ${bars}${nowLine(p, h)}
+      </svg>
+      <div class="axis"><span><i class="sw calm"></i>약함 <i class="sw mid"></i>보통 <i class="sw strong"></i>강함</span></div>`);
+  }
+
+  /** 오름 정복 — 읍면동별 가로 막대 */
+  function chartOreum() {
+    if (!oreum.length) return '';
+    // 한 곳도 안 갔으면 빈 막대만 늘어선다 — 기록이 생기면 보여준다
+    if (!S.visits.some((v) => v.oreumId != null)) return '';
+    const rows = C.oreumByArea(oreum, S.visits);
+    const done = rows.reduce((s, r) => s + r.done, 0);
+    const bars = rows.map((r) => {
+      const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
+      return `<div class="hbar">
+        <span class="hbName">${esc(r.area)}</span>
+        <span class="hbTrack"><i style="width:${pct}%"></i></span>
+        <span class="hbNum">${r.done}/${r.total}</span>
+      </div>`;
+    }).join('');
+    return card('오름 정복', `${done}/${oreum.length}`, `<div class="hbars">${bars}</div>`);
+  }
+
+  /** 기록 추이 — 월별 막대 */
+  function chartMonths() {
+    const rows = C.countByMonth(S.visits);
+    if (!rows.length) return '';
+    const max = Math.max(...rows.map((r) => r.n));
+    const bars = rows.slice(-12).map((r) => {
+      const pct = Math.round((r.n / max) * 100);
+      return `<div class="vbar" title="${r.month} · ${r.n}번">
+        <span class="vbNum">${r.n}</span>
+        <span class="vbTrack"><i style="height:${Math.max(pct, 4)}%"></i></span>
+        <span class="vbName">${r.month.slice(5)}</span>
+      </div>`;
+    }).join('');
+    return card('기록 추이', `${S.visits.length}번`, `<div class="vbars">${bars}</div>`);
+  }
+
+  /** 무엇을 하고 다녔나 — 종류별 */
+  function chartKinds() {
+    if (!S.visits.length) return '';
+    const s = C.summarize(S.visits);
+    const rows = C.KINDS.map((k) => ({ k: k, n: s.byKind[k.v] || 0 })).filter((r) => r.n > 0);
+    if (!rows.length) return '';
+    const max = Math.max(...rows.map((r) => r.n));
+    const bars = rows.map((r) => `<div class="hbar">
+      <span class="hbName">${r.k.icon} ${esc(r.k.label)}</span>
+      <span class="hbTrack"><i style="width:${Math.round((r.n / max) * 100)}%"></i></span>
+      <span class="hbNum">${r.n}</span>
+    </div>`).join('');
+    return card('무엇을 했나', '', `<div class="hbars">${bars}</div>`);
+  }
+
+  function card(title, note, body) {
+    return `<section class="cardBox">
+      <div class="cardHead"><b>${esc(title)}</b><span>${esc(note || '')}</span></div>
+      ${body}
+    </section>`;
+  }
+
+  function renderCharts() {
+    const el = $('charts');
+    if (!el) return;
+    const parts = [chartTide(), chartWeather(), chartWind(),
+      chartOreum(), chartMonths(), chartKinds()].filter(Boolean);
+    el.innerHTML = parts.length ? parts.join('')
+      : '<div class="empty">아직 보여줄 게 없습니다<br>날씨를 받아오거나 기록을 남겨보세요</div>';
+  }
+
   function renderLog() {
     $('logStats').hidden = false;
     const s = C.summarize(S.visits);
@@ -507,6 +673,7 @@
     renderSuggest();
     if ($('q').value.trim()) renderResults(); else renderLog();
     renderOreumList();
+    renderCharts();
   }
 
   /* ═══════════ 기록 시트 ═══════════ */
@@ -769,6 +936,7 @@
     }
     renderVerdict();
     renderSuggest();
+    renderCharts();   // 날씨가 늦게 도착한다. 이걸 빠뜨리면 물때·기온 그래프가 영영 안 뜬다.
   }
 
   async function start() {
@@ -806,7 +974,7 @@
     set oreum(v) { oreum = v; },
     set here(v) { here = v; },
     get here() { return here; },
-    renderAll, renderVerdict, renderLog, renderResults, renderOreumList, renderSuggest,
+    renderAll, renderVerdict, renderLog, renderResults, renderOreumList, renderSuggest, renderCharts,
     openSheet, closeSheet, saveSheet, deleteVisit, goTab, exportCSV, load, save,
     get draft() { return draft; },
   };

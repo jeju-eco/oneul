@@ -436,6 +436,130 @@ t('같은 밀리초에 연달아 만들어도 안 겹친다', () => {
     Date.now = real;
   }
 });
+/* ── 그래프 ── */
+const mkRows = (vals) => vals.map((v, i) => ({
+  time: `2026-09-24T${String(i).padStart(2, '0')}:00`, v: v,
+}));
+
+t('점이 2개 미만이면 그래프를 안 그린다', () => {
+  assert.strictEqual(C.plot([], {}), null);
+  assert.strictEqual(C.plot(mkRows([1]), {}), null);
+  assert.strictEqual(C.plot(null, {}), null);
+});
+t('결측(null)은 건너뛴다', () => {
+  const p = C.plot(mkRows([1, null, 3, null, 5]), { w: 100, h: 50, pad: 0 });
+  assert.strictEqual(p.pts.length, 3);
+  assert.deepStrictEqual(p.pts.map((x) => x.v), [1, 3, 5]);
+});
+t('최솟값이 아래, 최댓값이 위에 온다', () => {
+  const p = C.plot(mkRows([0, 10]), { w: 100, h: 50, pad: 0 });
+  assert.strictEqual(p.min, 0);
+  assert.strictEqual(p.max, 10);
+  assert.ok(p.pts[0].y > p.pts[1].y, 'y축이 뒤집혀 있음(SVG는 아래가 +)');
+  assert.strictEqual(Math.round(p.pts[1].y), 0, '최댓값이 맨 위여야 함');
+  assert.strictEqual(Math.round(p.pts[0].y), 50, '최솟값이 맨 아래여야 함');
+});
+t('값이 전부 같아도 그려진다', () => {
+  const p = C.plot(mkRows([2, 2, 2]), { w: 100, h: 50, pad: 0 });
+  assert.ok(p, '평평하면 null이 됨');
+  assert.ok(Number.isFinite(p.pts[0].y), 'y가 NaN');
+  assert.ok(p.pts.every((q) => q.y === p.pts[0].y), '평평해야 함');
+});
+t('시간순으로 x가 늘어난다', () => {
+  const p = C.plot(mkRows([5, 3, 8, 1]), { w: 120, h: 50, pad: 10 });
+  for (let i = 1; i < p.pts.length; i++) assert.ok(p.pts[i].x > p.pts[i - 1].x);
+  assert.strictEqual(Math.round(p.pts[0].x), 10, '여백이 안 지켜짐');
+  assert.strictEqual(Math.round(p.pts[p.pts.length - 1].x), 110);
+});
+t('곡선 path가 유효한 SVG 문법이다', () => {
+  const p = C.plot(mkRows([1, 4, 2, 6]), { w: 100, h: 50, pad: 0 });
+  const d = C.smoothPath(p.pts);
+  assert.ok(d.startsWith('M'), d.slice(0, 20));
+  assert.ok(d.includes('C'), '곡선이 아님');
+  assert.ok(!/NaN|Infinity|undefined/.test(d), 'path에 NaN: ' + d.slice(0, 80));
+  assert.strictEqual((d.match(/C/g) || []).length, 3, '구간 수가 안 맞음');
+});
+t('점이 부족하면 path는 빈 문자열', () => {
+  assert.strictEqual(C.smoothPath([]), '');
+  assert.strictEqual(C.smoothPath([{ x: 1, y: 1 }]), '');
+  assert.strictEqual(C.smoothPath(null), '');
+});
+t('실제 조위 예보로 그려도 NaN이 없다', () => {
+  const rows = Array.from({ length: 48 }, (_, i) => ({
+    time: `2026-09-${i < 24 ? '24' : '25'}T${String(i % 24).padStart(2, '0')}:00`,
+    v: Math.sin((2 * Math.PI * i) / 12.42) * 1.2,
+  }));
+  const p = C.plot(rows, { w: 340, h: 90, pad: 6 });
+  assert.strictEqual(p.pts.length, 48);
+  assert.ok(!/NaN/.test(C.smoothPath(p.pts)));
+});
+
+t('가운데 라벨은 그대로 둔다', () => {
+  assert.deepStrictEqual(C.labelAnchor(170, 340, 18), { anchor: 'middle', x: 170 });
+});
+t('왼쪽 끝 라벨은 안쪽으로 붙인다', () => {
+  const r = C.labelAnchor(5, 340, 18);
+  assert.strictEqual(r.anchor, 'start');
+  assert.ok(r.x >= 0 && r.x < 18, String(r.x));
+});
+t('오른쪽 끝 라벨은 안쪽으로 붙인다', () => {
+  const r = C.labelAnchor(330, 340, 18);
+  assert.strictEqual(r.anchor, 'end');
+  assert.ok(r.x <= 340 && r.x > 322, String(r.x));
+});
+t('어떤 위치에서도 라벨이 밖으로 안 나간다', () => {
+  const W2 = 340, half = 18;
+  for (let x = 0; x <= W2; x += 2) {
+    const r = C.labelAnchor(x, W2, half);
+    const l = r.anchor === 'start' ? r.x : r.anchor === 'end' ? r.x - half * 2 : r.x - half;
+    const rr = r.anchor === 'start' ? r.x + half * 2 : r.anchor === 'end' ? r.x : r.x + half;
+    assert.ok(l >= -1, `x=${x} 왼쪽 넘침 ${l}`);
+    assert.ok(rr <= W2 + 1, `x=${x} 오른쪽 넘침 ${rr}`);
+  }
+});
+
+t('하루 24칸으로 접는다', () => {
+  const rows = [
+    { time: '2026-09-24T08:00', v: 1 },
+    { time: '2026-09-24T09:00', v: 2 },
+    { time: '2026-09-25T08:00', v: 3 },
+  ];
+  const r = C.byHour(rows, '2026-09-24');
+  assert.strictEqual(r.length, 2);
+  assert.deepStrictEqual(r.map((x) => x.hour), [8, 9]);
+});
+
+t('날짜별 기록 수를 센다', () => {
+  const m = C.countByDate([
+    { date: '2026-09-24' }, { date: '2026-09-24' }, { date: '2026-09-25' },
+  ]);
+  assert.strictEqual(m.get('2026-09-24'), 2);
+  assert.strictEqual(m.get('2026-09-25'), 1);
+  assert.strictEqual(m.get('2026-09-26'), undefined);
+});
+t('날짜 없는 기록은 안 센다', () => {
+  assert.strictEqual(C.countByDate([{ date: null }, {}]).size, 0);
+  assert.strictEqual(C.countByDate(null).size, 0);
+});
+t('월별 집계는 날짜순이다', () => {
+  const r = C.countByMonth([
+    { date: '2026-10-02' }, { date: '2026-09-24' }, { date: '2026-09-30' },
+  ]);
+  assert.deepStrictEqual(r, [{ month: '2026-09', n: 2 }, { month: '2026-10', n: 1 }]);
+});
+t('읍면동별 정복 현황', () => {
+  const o = [{ i: 1, d: '표선면' }, { i: 2, d: '표선면' }, { i: 3, d: '대정읍' }];
+  const r = C.oreumByArea(o, [{ oreumId: 1 }]);
+  assert.strictEqual(r[0].area, '표선면');
+  assert.strictEqual(r[0].total, 2);
+  assert.strictEqual(r[0].done, 1);
+  assert.strictEqual(r[1].done, 0);
+});
+t('실제 오름 데이터의 지역 합계가 전체와 같다', () => {
+  const r = C.oreumByArea(oreumData.oreum, []);
+  assert.strictEqual(r.reduce((s, x) => s + x.total, 0), oreumData.oreum.length);
+});
+
 /* ── 지도 묶음 ── */
 t('멀리 떨어진 점은 안 묶인다', () => {
   const r = C.clusterByPixel([{ x: 0, y: 0 }, { x: 200, y: 200 }], 34);

@@ -289,6 +289,115 @@
     return out;
   }
 
+  /* ═══════ 그래프용 계산 (SVG 좌표까지만, 그리기는 app.js) ═══════ */
+
+  /**
+   * 시계열을 그래프 좌표로 바꾼다.
+   * @param {Array} rows - {time, v} 형태. v가 null이면 그 점은 건너뛴다.
+   * @param {Object} box - {w, h, pad} 그릴 상자 크기
+   * @returns {{pts:Array, min:number, max:number, xOf:Function, yOf:Function}|null}
+   */
+  function plot(rows, box) {
+    const b = Object.assign({ w: 340, h: 90, pad: 6 }, box || {});
+    const ok = (rows || []).filter((r) => r && r.v != null && Number.isFinite(r.v));
+    if (ok.length < 2) return null;
+
+    const vs = ok.map((r) => r.v);
+    let min = Math.min(...vs), max = Math.max(...vs);
+    if (min === max) { min -= 1; max += 1; }          // 평평한 값도 그려지게
+    const t0 = new Date(ok[0].time).getTime();
+    const t1 = new Date(ok[ok.length - 1].time).getTime();
+    const span = t1 - t0 || 1;
+
+    const xOf = (t) => {
+      const ms = (t instanceof Date ? t.getTime() : new Date(t).getTime());
+      return b.pad + ((ms - t0) / span) * (b.w - b.pad * 2);
+    };
+    const yOf = (v) => b.pad + (1 - (v - min) / (max - min)) * (b.h - b.pad * 2);
+
+    return {
+      pts: ok.map((r) => ({ x: xOf(r.time), y: yOf(r.v), v: r.v, time: r.time })),
+      min: min, max: max, t0: t0, t1: t1, box: b, xOf: xOf, yOf: yOf,
+    };
+  }
+
+  /**
+   * 그래프 라벨을 어디에 붙일지 정한다.
+   * 가운데 정렬만 쓰면 양 끝 라벨이 그래프 밖으로 잘린다.
+   * @returns {{anchor:string, x:number}}
+   */
+  function labelAnchor(x, width, half) {
+    const hw = half == null ? 18 : half;
+    if (x - hw < 0) return { anchor: 'start', x: 1 };
+    if (x + hw > width) return { anchor: 'end', x: width - 1 };
+    return { anchor: 'middle', x: x };
+  }
+
+  /** 점들을 부드러운 곡선 path로. 조위는 각지면 어색하다. */
+  function smoothPath(pts) {
+    if (!pts || pts.length < 2) return '';
+    let d = `M${r2(pts[0].x)},${r2(pts[0].y)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i - 1], q = pts[i];
+      const mx = (p.x + q.x) / 2;
+      d += `C${r2(mx)},${r2(p.y)} ${r2(mx)},${r2(q.y)} ${r2(q.x)},${r2(q.y)}`;
+    }
+    return d;
+  }
+
+  function r2(n) { return Math.round(n * 10) / 10; }
+
+  /** 하루 24칸으로 접는다. 막대그래프(기온·비·바람)용. */
+  function byHour(rows, dayStr) {
+    const out = [];
+    (rows || []).forEach((r) => {
+      if (dayStr && String(r.time).slice(0, 10) !== dayStr) return;
+      const hh = Number(String(r.time).slice(11, 13));
+      if (!Number.isFinite(hh)) return;
+      out.push(Object.assign({ hour: hh }, r));
+    });
+    return out;
+  }
+
+  /**
+   * 기록을 달력 히트맵용으로 센다.
+   * @returns {Map} 'YYYY-MM-DD' -> 건수
+   */
+  function countByDate(visits) {
+    const m = new Map();
+    (visits || []).forEach((v) => {
+      if (!v || !v.date) return;
+      m.set(v.date, (m.get(v.date) || 0) + 1);
+    });
+    return m;
+  }
+
+  /** 월별 집계. 막대그래프용. */
+  function countByMonth(visits) {
+    const m = new Map();
+    (visits || []).forEach((v) => {
+      if (!v || !v.date) return;
+      const k = String(v.date).slice(0, 7);
+      m.set(k, (m.get(k) || 0) + 1);
+    });
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, n]) => ({ month: month, n: n }));
+  }
+
+  /** 읍면동별 오름 정복 현황. */
+  function oreumByArea(oreum, visits) {
+    const done = new Set((visits || []).filter((v) => v.oreumId != null).map((v) => String(v.oreumId)));
+    const m = new Map();
+    (oreum || []).forEach((o) => {
+      const k = o.d || '기타';
+      const c = m.get(k) || { area: k, total: 0, done: 0 };
+      c.total++;
+      if (done.has(String(o.i))) c.done++;
+      m.set(k, c);
+    });
+    return [...m.values()].sort((a, b) => b.total - a.total);
+  }
+
   function distLabel(m) {
     if (m == null) return '';
     if (m < 1000) return m + 'm';
@@ -504,6 +613,7 @@
     tideExtremes, nextTide, reviveTide, hhmm,
     hourScore, dayVerdict, SCORE_LABEL,
     distance, distLabel, altLabel, clusterByPixel,
+    plot, smoothPath, labelAnchor, byHour, countByDate, countByMonth, oreumByArea,
     KINDS, KIND_LABEL, KIND_ICON, searchPlaces, suggest,
     todayStr, newId, makeVisit, summarize, toCSV, csvCell,
   };

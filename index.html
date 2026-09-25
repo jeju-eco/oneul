@@ -31,6 +31,7 @@
 <!-- ═══════ 탭 ═══════ -->
 <nav id="tabbar">
   <button data-tab="map" class="on">지도</button>
+  <button data-tab="chart">그래프</button>
   <button data-tab="log">기록</button>
   <button data-tab="list">오름</button>
 </nav>
@@ -46,6 +47,11 @@
       <button id="btnLocate" class="ghost sm">내 위치</button>
     </div>
     <div id="suggest"></div>
+  </section>
+
+  <!-- ─── 그래프 ─── -->
+  <section id="pane-chart" class="pane">
+    <div id="charts"></div>
   </section>
 
   <!-- ─── 기록 ─── -->

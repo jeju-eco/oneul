@@ -214,6 +214,51 @@ main { flex: 1 1 auto; position: relative; overflow: hidden; }
   padding-bottom: calc(86px + env(safe-area-inset-bottom));
 }
 
+/* ═══════ 그래프 ═══════ */
+#charts { overflow-y: auto; padding: 10px 12px calc(86px + env(safe-area-inset-bottom)); }
+.cardBox {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 14px; padding: 11px 12px 9px; margin-bottom: 11px;
+}
+.cardHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+.cardHead b { font-size: 15px; }
+.cardHead span { font-size: 13px; color: var(--dim); }
+.chart { width: 100%; display: block; }
+.axis {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--dim); margin-top: 3px;
+}
+.axis i.sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin: 0 2px 0 6px; }
+.axis i.sw.calm { background: var(--accent); }
+.axis i.sw.mid { background: var(--warn); }
+.axis i.sw.strong { background: #e46b5b; }
+
+.tideArea { fill: rgba(77,184,168,.16); stroke: none; }
+.tideLine { fill: none; stroke: var(--accent); stroke-width: 2; }
+.tideDot { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
+.tideDot.low { stroke: var(--warn); }
+.tideTxt { fill: var(--dim); font-size: 10px; }
+.nowline { stroke: #e46b5b; stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .85; }
+.tempLine { fill: none; stroke: var(--warn); stroke-width: 2; }
+.rainBar { fill: rgba(94,150,214,.55); }
+.windBar.calm { fill: var(--accent); opacity: .65; }
+.windBar.mid { fill: var(--warn); opacity: .8; }
+.windBar.strong { fill: #e46b5b; }
+
+.hbars { display: flex; flex-direction: column; gap: 6px; }
+.hbar { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.hbName { flex: 0 0 76px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hbTrack { flex: 1 1 auto; height: 9px; border-radius: 5px; background: var(--card2); overflow: hidden; }
+.hbTrack > i { display: block; height: 100%; background: var(--accent); }
+.hbNum { flex: 0 0 auto; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+.vbars { display: flex; align-items: flex-end; gap: 6px; height: 110px; }
+.vbar { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 100%; }
+.vbNum { font-size: 11px; color: var(--dim); }
+.vbTrack { flex: 1 1 auto; width: 100%; display: flex; align-items: flex-end; }
+.vbTrack > i { display: block; width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; }
+.vbName { font-size: 11px; color: var(--dim); }
+
 /* ═══════ 다녀옴 ═══════ */
 #fab {
   /* 가운데에 두면 목록의 이름 자리를 덮는다. 오른쪽 아래가 엄지에도 가깝다. */

@@ -561,6 +561,75 @@ async function boot(opts) {
     });
   }
 
+  /* ═══════ 그래프 ═══════ */
+  console.log('\n[그래프]');
+  {
+    const p = await boot({ seed: { version: 1, visits: [
+      { id: 'a', kind: 'oreum', name: '가세오름', date: '2026-07-11', time: '09:00',
+        lat: 33.4, lon: 126.8, oreumId: 52, note: '', photo: null, snap: null, ts: 1 },
+      { id: 'b', kind: 'food', name: '고기국수', date: '2026-08-03', time: '12:00',
+        lat: 33.5, lon: 126.5, oreumId: null, note: '', photo: null, snap: null, ts: 2 },
+    ] }, wait: 400 });
+    p.doc.querySelector('#tabbar button[data-tab="chart"]').click();
+
+    const titles = () => [...p.doc.querySelectorAll('#charts .cardHead b')].map((b) => b.textContent);
+    t('날씨가 오면 물때 그래프가 뜬다', () => {
+      // renderCharts를 날씨 수신 후에 안 부르면 영영 안 뜬다 (실기에서 터진 버그)
+      assert.ok(titles().includes('물때'), '물때 그래프 없음: ' + titles().join(','));
+    });
+    t('기온·바람 그래프도 뜬다', () => {
+      assert.ok(titles().includes('기온과 비'), titles().join(','));
+      assert.ok(titles().includes('바람'), titles().join(','));
+    });
+    t('기록 기반 그래프도 뜬다', () => {
+      assert.ok(titles().includes('오름 정복'), titles().join(','));
+      assert.ok(titles().includes('기록 추이'), titles().join(','));
+    });
+    t('곡선에 NaN이 섞이지 않는다', () => {
+      const svg = p.$('charts').innerHTML;
+      assert.ok(!/NaN|Infinity|undefined/.test(svg), 'SVG에 잘못된 좌표가 있음');
+    });
+    t('조위 곡선에 점이 충분히 찍힌다', () => {
+      const d = p.doc.querySelector('.tideLine').getAttribute('d');
+      assert.ok(d.length > 200, '곡선이 너무 짧음: ' + d.length);
+      assert.ok((d.match(/C/g) || []).length > 20, '구간이 적음');
+    });
+    t('만조·간조 표시가 곡선 위에 찍힌다', () => {
+      assert.ok(p.doc.querySelectorAll('.tideDot').length > 0, '극값 표시가 없음');
+      const txt = [...p.doc.querySelectorAll('.tideTxt')].map((x) => x.textContent);
+      assert.ok(txt.some((s) => s.startsWith('만')), '만조 표시 없음');
+      assert.ok(txt.some((s) => s.startsWith('간')), '간조 표시 없음');
+    });
+    t('라벨이 그래프 밖으로 안 나간다', () => {
+      const svg = p.doc.querySelector('#charts .chart');
+      const W2 = Number(svg.getAttribute('viewBox').split(' ')[2]);
+      [...svg.querySelectorAll('.tideTxt')].forEach((el) => {
+        const x = Number(el.getAttribute('x'));
+        const a = el.getAttribute('text-anchor');
+        const half = el.textContent.length * 2.7;
+        const l = a === 'start' ? x : a === 'end' ? x - half * 2 : x - half;
+        const r2 = a === 'start' ? x + half * 2 : a === 'end' ? x : x + half;
+        assert.ok(l >= -1 && r2 <= W2 + 1,
+          `'${el.textContent}'가 밖으로 나감 (${Math.round(l)}~${Math.round(r2)}, 폭 ${W2})`);
+      });
+    });
+    t('오름 정복 막대 합이 전체와 맞는다', () => {
+      const nums = [...p.doc.querySelectorAll('#charts .hbNum')].map((e2) => e2.textContent);
+      const tot = nums.filter((s) => s.includes('/'))
+        .reduce((s, x) => s + Number(x.split('/')[1]), 0);
+      assert.strictEqual(tot, p.app.oreum.length, `막대 합 ${tot} ≠ 오름 ${p.app.oreum.length}`);
+    });
+  }
+  {
+    const empty = await boot({ offline: true, wait: 300 });
+    empty.doc.querySelector('#tabbar button[data-tab="chart"]').click();
+    t('날씨도 기록도 없으면 안내를 보여준다', () => {
+      assert.deepStrictEqual(empty.errors, []);
+      assert.ok(empty.$('charts').textContent.includes('아직 보여줄 게 없습니다'),
+        empty.$('charts').textContent.slice(0, 60));
+    });
+  }
+
   /* ═══════ 탭 ═══════ */
   t('탭을 오가도 예외가 없다', async () => {
     const before = e.errors.length;

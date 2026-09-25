@@ -49,6 +49,13 @@ const MUTATIONS = [
   ['core.js', '묶음 중심을 평균 안 냄', 'hit.x = hit.items.reduce((s, q) => s + q.x, 0) / hit.items.length;', 'void 0;'],
   ['app.js', '고치기 표시 제거', '<span class="rt edit" aria-hidden="true">고치기 ›</span>', ''],
   ['app.js', '첫 안내 항상 표시', "const hint = list.length <= 3", "const hint = list.length <= 99999"],
+  ['app.js', '날씨 받고 그래프 갱신 안 함', 'renderCharts();   // 날씨가 늦게 도착한다. 이걸 빠뜨리면 물때·기온 그래프가 영영 안 뜬다.', ''],
+  ['app.js', '조위 시계열 안 모음', 'sea = (H.time || []).map((t, i) => ({', 'sea = [].map((t, i) => ({'],
+  ['core.js', '그래프 y축 뒤집기', 'const yOf = (v) => b.pad + (1 - (v - min) / (max - min)) * (b.h - b.pad * 2);', 'const yOf = (v) => b.pad + ((v - min) / (max - min)) * (b.h - b.pad * 2);'],
+  ['core.js', '평평한 값 처리 제거', 'if (min === max) { min -= 1; max += 1; }', ''],
+  ['core.js', '결측 안 거름', "const ok = (rows || []).filter((r) => r && r.v != null && Number.isFinite(r.v));", "const ok = (rows || []);"],
+  ['core.js', '가장자리 라벨 보정 제거', "if (x - hw < 0) return { anchor: 'start', x: 1 };", "if (false) return { anchor: 'start', x: 1 };"],
+  ['core.js', '오른쪽 라벨 보정 제거', "if (x + hw > width) return { anchor: 'end', x: width - 1 };", "if (false) return { anchor: 'end', x: width - 1 };"],
   ['core.js', 'id를 난수로 (같은 ms 충돌)', "return Date.now().toString(36) + '-' + (idSeq++).toString(36);", "return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);"],
 ];
 
