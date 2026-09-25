@@ -102,7 +102,7 @@ async function boot(opts) {
     map: () => {
       const m = {
         setView() { return m; }, on() { return m; }, remove() { return m; },
-        addLayer() { return m; }, removeLayer() { return m; },
+        addLayer() { return m; }, removeLayer() { return m; }, invalidateSize() { return m; },
         getZoom: () => 10, getCenter: () => ({ lat: 33.38, lng: 126.55 }),
         latLngToContainerPoint: (ll) => {
           const la = Array.isArray(ll) ? ll[0] : ll.lat, lo = Array.isArray(ll) ? ll[1] : ll.lng;
@@ -562,6 +562,13 @@ async function boot(opts) {
   }
 
   /* ═══════ 탭 ═══════ */
+  t('탭을 오가도 예외가 없다', async () => {
+    const before = e.errors.length;
+    ['log', 'list', 'map', 'log', 'map'].forEach((n) =>
+      e.doc.querySelector(`#tabbar button[data-tab="${n}"]`).click());
+    await new Promise((r) => setTimeout(r, 200));   // 지연 호출까지 기다린다
+    assert.deepStrictEqual(e.errors.slice(before), []);
+  });
   console.log('\n[탭]');
   ['log', 'list', 'map'].forEach((name) => {
     e.doc.querySelector(`#tabbar button[data-tab="${name}"]`).click();
