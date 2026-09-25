@@ -436,6 +436,59 @@ t('같은 밀리초에 연달아 만들어도 안 겹친다', () => {
     Date.now = real;
   }
 });
+/* ── 지도 묶음 ── */
+t('멀리 떨어진 점은 안 묶인다', () => {
+  const r = C.clusterByPixel([{ x: 0, y: 0 }, { x: 200, y: 200 }], 34);
+  assert.strictEqual(r.length, 2);
+  assert.strictEqual(r[0].items.length, 1);
+});
+t('가까운 점은 하나로 묶인다', () => {
+  const r = C.clusterByPixel([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 8 }], 34);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].items.length, 3);
+});
+t('묶음 중심은 속한 점들의 평균이다', () => {
+  const r = C.clusterByPixel([{ x: 0, y: 0 }, { x: 20, y: 0 }], 34);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].x, 10);
+  assert.strictEqual(r[0].y, 0);
+});
+t('모든 점이 정확히 한 번씩 들어간다', () => {
+  const pts = Array.from({ length: 200 }, (_, i) => ({ x: (i * 13) % 390, y: (i * 29) % 844, id: i }));
+  const r = C.clusterByPixel(pts, 34);
+  const ids = r.flatMap((c) => c.items.map((p) => p.id));
+  assert.strictEqual(ids.length, 200, '점이 사라지거나 중복됨');
+  assert.strictEqual(new Set(ids).size, 200);
+});
+t('거리를 0으로 주면 아무것도 안 묶인다', () => {
+  const r = C.clusterByPixel([{ x: 0, y: 0 }, { x: 1, y: 0 }], 0);
+  assert.strictEqual(r.length, 2);
+});
+t('빈 입력·null도 안전', () => {
+  assert.deepStrictEqual(C.clusterByPixel([], 34), []);
+  assert.deepStrictEqual(C.clusterByPixel(null, 34), []);
+});
+t('실제 오름 좌표를 폰 화면에 넣으면 묶임이 생긴다', () => {
+  // 제주 전체를 390px 폭에 넣은 상황을 흉내 낸다
+  const lats = oreumData.oreum.map((o) => o.lat), lons = oreumData.oreum.map((o) => o.lon);
+  const [y0, y1] = [Math.min(...lats), Math.max(...lats)];
+  const [x0, x1] = [Math.min(...lons), Math.max(...lons)];
+  const pts = oreumData.oreum.map((o) => ({
+    x: ((o.lon - x0) / (x1 - x0)) * 390,
+    y: ((y1 - o.lat) / (y1 - y0)) * 360,
+  }));
+  const r = C.clusterByPixel(pts, 34);
+  assert.ok(r.length < oreumData.oreum.length, '하나도 안 묶임');
+  assert.ok(r.some((c) => c.items.length > 1), '묶음이 없음');
+  // 묶은 뒤에는 서로 34px 이상 떨어져 있어야 한다
+  for (let i = 0; i < r.length; i++) {
+    for (let j = i + 1; j < r.length; j++) {
+      const dd = Math.hypot(r[i].x - r[j].x, r[i].y - r[j].y);
+      assert.ok(dd > 12, `묶은 뒤에도 ${Math.round(dd)}px로 붙어 있음`);
+    }
+  }
+});
+
 t('집계가 맞는다', () => {
   const s = C.summarize(db.visits);
   assert.strictEqual(s.total, 3);

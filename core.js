@@ -261,6 +261,34 @@
     return v == null || !Number.isFinite(n) || n <= 0 ? '' : Math.round(n) + 'm';
   }
 
+  /**
+   * 화면에서 가까운 점들을 하나로 묶는다. 제주 전체를 폰 화면에 넣으면
+   * 오름 69개가 겹쳐 어느 것인지 알 수 없기 때문이다.
+   * @param {Array} pts - {x, y, ...} 화면 픽셀 좌표
+   * @param {number} px - 이 거리 안이면 같은 묶음 (기본 34px, 손가락 굵기)
+   * @returns {Array} [{x, y, items:[...]}] — items가 1개면 낱개
+   */
+  function clusterByPixel(pts, px) {
+    const R = px == null ? 34 : px;
+    const out = [];
+    (pts || []).forEach((p) => {
+      let hit = null;
+      for (let i = 0; i < out.length; i++) {
+        const c = out[i];
+        if (Math.hypot(c.x - p.x, c.y - p.y) <= R) { hit = c; break; }
+      }
+      if (hit) {
+        hit.items.push(p);
+        // 묶음 중심을 평균으로 옮긴다
+        hit.x = hit.items.reduce((s, q) => s + q.x, 0) / hit.items.length;
+        hit.y = hit.items.reduce((s, q) => s + q.y, 0) / hit.items.length;
+      } else {
+        out.push({ x: p.x, y: p.y, items: [p] });
+      }
+    });
+    return out;
+  }
+
   function distLabel(m) {
     if (m == null) return '';
     if (m < 1000) return m + 'm';
@@ -475,7 +503,7 @@
     lunar, multtae, multtaeStrength, MULTTAE_8, moonIllum, moonLabel,
     tideExtremes, nextTide, reviveTide, hhmm,
     hourScore, dayVerdict, SCORE_LABEL,
-    distance, distLabel, altLabel,
+    distance, distLabel, altLabel, clusterByPixel,
     KINDS, KIND_LABEL, KIND_ICON, searchPlaces, suggest,
     todayStr, newId, makeVisit, summarize, toCSV, csvCell,
   };

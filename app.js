@@ -292,6 +292,8 @@
     layer = L.layerGroup().addTo(map);
     renderMap();
     fitAll();
+    // 화면 좌표로 묶으므로 줌·이동 후 다시 계산한다
+    map.on('zoomend moveend', () => renderMap());
   }
 
   /** 오름과 내 기록이 모두 들어오게 지도를 맞춘다. 제주시만 보이면 마커 대부분이 화면 밖이다. */
@@ -311,19 +313,50 @@
     });
   }
 
+  /** 여러 오름이 겹친 자리. 개수를 적고, 다녀온 비율만큼 테두리를 채운다. */
+  function clusterIcon(n, done) {
+    const s = n >= 12 ? 40 : n >= 6 ? 36 : 32;
+    return L.divIcon({
+      className: '', iconSize: [s, s], iconAnchor: [s / 2, s / 2],
+      html: `<div class="cluster${done === n ? ' allDone' : done ? ' someDone' : ''}"
+               style="width:${s}px;height:${s}px;line-height:${s}px">${n}</div>`,
+    });
+  }
+
   function renderMap() {
     if (!map || !layer) return;
     layer.clearLayers();
 
     const visitedOreum = new Set(S.visits.filter((v) => v.oreumId != null).map((v) => String(v.oreumId)));
 
-    // 오름 — 다녀온 곳은 진하게
-    oreum.forEach((o) => {
-      const done = visitedOreum.has(String(o.i));
-      L.marker([o.lat, o.lon], { icon: pin(done ? 'done' : 'todo', done ? 16 : 12) })
-        .bindPopup(`<b>${esc(o.n)}</b><br>${esc(o.d)} · ${C.altLabel(o.alt)}` +
-          `<br>${done ? '✅ 다녀옴' : '아직 안 감'}` +
-          `<br><a href="#" data-go="${o.i}">여기 다녀옴 기록</a>`)
+    // 화면에서 겹치는 오름은 묶어서 개수로 보여준다.
+    // 제주 전체를 폰 화면에 넣으면 69개가 떡져서 어느 것인지 알 수 없다.
+    const pts = oreum.map((o) => {
+      const p = map.latLngToContainerPoint([o.lat, o.lon]);
+      return { x: p.x, y: p.y, o: o, done: visitedOreum.has(String(o.i)) };
+    });
+
+    C.clusterByPixel(pts, 26).forEach((c) => {
+      const ll = map.containerPointToLatLng(L.point(c.x, c.y));
+      if (c.items.length === 1) {
+        const it = c.items[0], o = it.o;
+        L.marker([o.lat, o.lon], { icon: pin(it.done ? 'done' : 'todo', it.done ? 16 : 12) })
+          .bindPopup(`<b>${esc(o.n)}</b><br>${esc(o.d)} · ${C.altLabel(o.alt)}` +
+            `<br>${it.done ? '✅ 다녀옴' : '아직 안 감'}` +
+            `<br><a href="#" data-go="${o.i}">여기 다녀옴 기록</a>`)
+          .addTo(layer);
+        return;
+      }
+      // 묶음: 개수를 쓰고, 누르면 그 안으로 확대한다
+      const doneN = c.items.filter((x) => x.done).length;
+      const n = c.items.length;
+      L.marker(ll, { icon: clusterIcon(n, doneN) })
+        .on('click', () => {
+          const b = L.latLngBounds(c.items.map((x) => [x.o.lat, x.o.lon]));
+          map.fitBounds(b.pad(0.35), { maxZoom: 14 });
+        })
+        .bindTooltip(`오름 ${n}곳${doneN ? ` · ${doneN}곳 다녀옴` : ''} — 눌러서 펼치기`,
+          { direction: 'top' })
         .addTo(layer);
     });
 
@@ -426,7 +459,9 @@
       return;
     }
     let cur = '';
-    $('logList').innerHTML = list.map((v) => {
+    const hint = list.length <= 3
+      ? '<div class="hint">기록을 누르면 고치거나 지울 수 있습니다</div>' : '';
+    $('logList').innerHTML = hint + list.map((v) => {
       const m = v.date.slice(0, 7);
       let head = '';
       if (m !== cur) { cur = m; head = `<div class="secHead">${m.replace('-', '년 ')}월</div>`; }
@@ -434,6 +469,7 @@
       return head + `<button class="item" data-vid="${esc(v.id)}">
         ${v.photo ? `<img class="thumb" src="${v.photo}" alt="">` : `<span class="ico">${C.KIND_ICON[v.kind] || '📍'}</span>`}
         <span class="body"><span class="nm">${esc(v.name || '(이름 없음)')}</span><span class="sub">${esc(sub)}</span></span>
+        <span class="rt edit" aria-hidden="true">고치기 ›</span>
       </button>`;
     }).join('');
   }

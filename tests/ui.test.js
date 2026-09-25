@@ -71,7 +71,65 @@ async function boot(opts) {
   window.Date = FakeDate;
 
   // 바깥 세계 차단
-  window.L = undefined;                          // 지도는 jsdom에서 못 돈다
+  // 최소한의 가짜 Leaflet — 타일은 못 그리지만 '무엇을 시켰는지'는 기록한다.
+  // 이게 없으면 지도 관련 코드가 통째로 안 돌아 버그를 놓친다.
+  window.__fitCalls = [];
+  window.__markers = [];
+  const bounds = (pts) => {
+    const la = pts.map((p) => (Array.isArray(p) ? p[0] : p.lat));
+    const lo = pts.map((p) => (Array.isArray(p) ? p[1] : p.lng));
+    const b = {
+      south: Math.min(...la), north: Math.max(...la),
+      west: Math.min(...lo), east: Math.max(...lo),
+      pad(f) {
+        const dy = (this.north - this.south) * f, dx = (this.east - this.west) * f;
+        return Object.assign({}, this, {
+          south: this.south - dy, north: this.north + dy,
+          west: this.west - dx, east: this.east + dx, pad: this.pad,
+        });
+      },
+    };
+    return b;
+  };
+  const chain = () => {
+    const o = {
+      addTo() { return o; }, bindPopup() { return o; }, bindTooltip() { return o; },
+      on() { return o; }, remove() { return o; }, setLatLng() { return o; },
+    };
+    return o;
+  };
+  window.L = {
+    map: () => {
+      const m = {
+        setView() { return m; }, on() { return m; }, remove() { return m; },
+        addLayer() { return m; }, removeLayer() { return m; },
+        getZoom: () => 10, getCenter: () => ({ lat: 33.38, lng: 126.55 }),
+        latLngToContainerPoint: (ll) => {
+          const la = Array.isArray(ll) ? ll[0] : ll.lat, lo = Array.isArray(ll) ? ll[1] : ll.lng;
+          return { x: (lo - 126.1) * 900, y: (33.6 - la) * 900 };
+        },
+        containerPointToLatLng: (p) => ({ lat: 33.6 - p.y / 900, lng: 126.1 + p.x / 900 }),
+        fitBounds: (b) => { window.__fitCalls.push(b); return m; },
+      };
+      return m;
+    },
+    tileLayer: Object.assign(() => ({ addTo: () => ({}) }), {}),
+    TileLayer: { extend: () => function () { return { addTo: () => ({}) }; } },
+    Util: { setOptions: () => {} },
+    DomUtil: { create: (t) => window.document.createElement(t) },
+    layerGroup: () => {
+      const g = {
+        addTo: () => g, clearLayers() { window.__markers.length = 0; return g; },
+        removeLayer: () => g, addLayer: () => g,
+      };
+      return g;
+    },
+    marker: (ll) => { window.__markers.push(ll); return chain(); },
+    divIcon: (o) => o,
+    point: (x, y) => ({ x: x, y: y }),
+    latLngBounds: bounds,
+    Browser: { mobile: true },
+  };
   window.indexedDB = undefined;
   window.navigator.vibrate = () => true;
   const geo = opts.geo === undefined ? { lat: 33.4996, lon: 126.5312 } : opts.geo;
@@ -193,18 +251,37 @@ async function boot(opts) {
     assert.strictEqual(e.doc.querySelectorAll('#oreumList .item').length, 68);
   });
   t('지도를 오름 전체 범위에 맞춘다', () => {
-    // jsdom엔 Leaflet이 없어 fitAll이 실제로 호출되는지를 코드로 확인한다.
+    // 가짜 Leaflet이 기록한 fitBounds 호출을 실제로 확인한다.
+    const calls = e.window.__fitCalls || [];
+    assert.ok(calls.length > 0, 'fitBounds가 한 번도 안 불림 — 지도가 오름 전체를 안 잡는다');
+    const last = calls[calls.length - 1];
+    const lats = e.app.oreum.map((o) => o.lat);
+    const lons = e.app.oreum.map((o) => o.lon);
+    // 맞춘 범위 안에 모든 오름이 들어와야 한다
+    assert.ok(last.south <= Math.min(...lats) + 1e-9, `남쪽이 잘림 ${last.south} > ${Math.min(...lats)}`);
+    assert.ok(last.north >= Math.max(...lats) - 1e-9, `북쪽이 잘림 ${last.north} < ${Math.max(...lats)}`);
+    assert.ok(last.west <= Math.min(...lons) + 1e-9, `서쪽이 잘림 ${last.west} > ${Math.min(...lons)}`);
+    assert.ok(last.east >= Math.max(...lons) - 1e-9, `동쪽이 잘림 ${last.east} < ${Math.max(...lons)}`);
+  });
+  t('겹치는 오름은 묶어서 마커 수를 줄인다', () => {
+    // 69개를 그대로 찍으면 폰 화면에서 떡진다. 묶어서 그려야 한다.
+    const drawn = e.window.__markers.length;
+    assert.ok(drawn > 0, '마커가 하나도 없음');
+    assert.ok(drawn < e.app.oreum.length,
+      `묶이지 않음 — 오름 ${e.app.oreum.length}개에 마커 ${drawn}개`);
+  });
+  t('묶어도 오름이 사라지지는 않는다', () => {
+    // 화면에 그린 묶음들의 개수 합이 전체 오름 수와 같아야 한다
     const src = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
-    assert.ok(/function fitAll\b/.test(src), 'fitAll 함수가 없음');
-    assert.ok(/fitBounds\(/.test(src), 'fitBounds 호출이 없음');
-    // 오름·기록을 모두 모아 범위를 만든다
-    const m = src.match(/function fitAll\b[\s\S]*?\n  \}/);
-    assert.ok(m, 'fitAll 본문을 못 찾음');
-    assert.ok(/oreum\.map/.test(m[0]), 'fitAll이 오름을 안 봄');
-    assert.ok(/S\.visits/.test(m[0]), 'fitAll이 내 기록을 안 봄');
-    // initMap과 start 양쪽에서 불려야 한다 (오름은 나중에 로드되므로)
-    assert.ok((src.match(/\n\s*fitAll\(\);/g) || []).length >= 2,
-      'fitAll 호출이 2곳 미만 — 오름 로드 후 재조정이 빠짐');
+    assert.ok(/clusterByPixel\(pts, \d+\)/.test(src), '묶음 호출이 없음');
+    const pts = e.app.oreum.map((o) => {
+      const p = { x: (o.lon - 126.1) * 900, y: (33.6 - o.lat) * 900 };
+      return p;
+    });
+    const px = Number(src.match(/clusterByPixel\(pts, (\d+)\)/)[1]);
+    const cl = e.C.clusterByPixel(pts, px);
+    const sum = cl.reduce((s, c) => s + c.items.length, 0);
+    assert.strictEqual(sum, e.app.oreum.length, '묶는 과정에서 오름이 사라짐');
   });
   t('제주 전체가 한 화면에 들어오는 범위다', () => {
     const lats = e.app.oreum.map((o) => o.lat);
@@ -448,6 +525,41 @@ async function boot(opts) {
     assert.strictEqual(e.state().visits.length, before);
     assert.strictEqual(e.$('undo').hidden, true);
   });
+
+  /* ═══════ 고치는 방법이 보이나 ═══════ */
+  console.log('\n[기록 수정 단서]');
+  {
+    const p = await boot({ seed: { version: 1, visits: [
+      { id: 'a', kind: 'food', name: '해장국집', date: '2026-09-24', time: '08:00',
+        lat: 33.5, lon: 126.5, oreumId: null, note: '', photo: null, snap: null, ts: 1 },
+    ] }, wait: 300 });
+    p.doc.querySelector('#tabbar button[data-tab="log"]').click();
+    const first = p.$('logList').querySelector('.item');
+    t('기록 항목에 고치기 표시가 있다', () => {
+      const e2 = first.querySelector('.rt.edit');
+      assert.ok(e2, '고치기 표시가 없음 — 누를 수 있는지 알 수 없다');
+      assert.ok(e2.textContent.includes('고치기'), e2.textContent);
+    });
+    t('기록이 적을 때 안내 한 줄이 뜬다', () => {
+      assert.ok(p.$('logList').querySelector('.hint'), '안내가 없음');
+    });
+    t('눌러서 실제로 고칠 수 있다', () => {
+      first.click();
+      assert.strictEqual(p.$('sheet').hidden, false, '시트가 안 열림');
+      assert.strictEqual(p.$('sName').value, '해장국집');
+    });
+  }
+  {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      id: 'v' + i, kind: 'food', name: '가게' + i, date: '2026-09-2' + (i % 5), time: '08:00',
+      lat: 33.5, lon: 126.5, oreumId: null, note: '', photo: null, snap: null, ts: i }));
+    const p2 = await boot({ seed: { version: 1, visits: many }, wait: 300 });
+    p2.doc.querySelector('#tabbar button[data-tab="log"]').click();
+    t('기록이 쌓이면 안내는 사라진다', () => {
+      assert.strictEqual(p2.$('logList').querySelector('.hint'), null, '계속 뜨면 잔소리가 된다');
+      assert.ok(p2.$('logList').querySelector('.rt.edit'), '고치기 표시는 남아야 함');
+    });
+  }
 
   /* ═══════ 탭 ═══════ */
   console.log('\n[탭]');
